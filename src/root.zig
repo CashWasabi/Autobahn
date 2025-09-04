@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const autobahn = @import("autobahn.zig");
+pub const Autobahn = @import("autobahn.zig").Autobahn;
 
 test {
     std.testing.refAllDecls(@This());
