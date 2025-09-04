@@ -1,0 +1,10 @@
+.zig-cache/
+zig-cache/
+zig-out/
+docker-out/
+/release/
+/debug/
+/build/
+/build-*/
+/docgen_tmp/
+zig/
