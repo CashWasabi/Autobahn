@@ -1,0 +1,8 @@
+.{
+    .name = .autobahn,
+    .version = "0.0.1",
+    .fingerprint = 0x93f61ce4d3f89142, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
