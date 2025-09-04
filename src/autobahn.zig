@@ -12,14 +12,13 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
             std.debug.assert(opts.lane_capacity >= opts.lanes);
 
             var lanes: []std.ArrayList(O) = undefined;
+            lanes = try allocator.alloc(std.ArrayList(O), opts.lanes);
             const remainder: usize = @rem(opts.lane_capacity, opts.lanes);
+            const lane_size = @divFloor(opts.lane_capacity, opts.lanes);
+
             if (remainder == 0) {
-                lanes = try allocator.alloc(std.ArrayList(O), opts.lanes);
-                const lane_size = @divFloor(opts.lane_capacity, opts.lanes);
                 for (0..opts.lanes) |i| lanes[i] = try .initCapacity(allocator, lane_size);
             } else {
-                lanes = try allocator.alloc(std.ArrayList(O), opts.lanes);
-                const lane_size: usize = @divFloor(opts.lane_capacity, opts.lanes);
                 lanes[0] = try .initCapacity(allocator, lane_size + remainder);
                 for (1..opts.lanes) |i| lanes[i] = try .initCapacity(allocator, lane_size);
             }
@@ -40,16 +39,14 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
             }
 
             for (self.lanes) |*lane| lane.clearRetainingCapacity();
-            const chunk_size = (in.len + self.lanes.len - 1) / self.lanes.len;
 
             var wg = std.Thread.WaitGroup{};
             wg.reset();
 
+            var start: usize = 0;
             for (self.lanes, 0..) |*lane, i| {
-                const start = i * chunk_size;
-                const end = @min(start + chunk_size, in.len);
-
-                wg.spawnManager(worker_func, .{ i, in[start..end], lane });
+                wg.spawnManager(worker_func, .{ i, in[start .. start + lane.capacity], lane });
+                start += lane.capacity;
             }
 
             wg.wait();
