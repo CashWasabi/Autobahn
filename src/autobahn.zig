@@ -25,7 +25,7 @@ pub fn Autobahn(comptime O: type) type {
             var start: usize = 0;
             for (lanes.*) |*lane| {
                 const end = start + lane.capacity;
-                self.pool.spawnWg(self.wg, lane_func, args ++ .{ start, end, lane });
+                self.pool.spawnWg(self.wg, lane_func, .{ start, end, lane } ++ args);
                 start += lane.capacity;
             }
 
@@ -36,8 +36,8 @@ pub fn Autobahn(comptime O: type) type {
     };
 }
 
-fn copy(in: []u32, start: usize, end: usize, out: *std.ArrayList(u32)) void {
-    for (in[start..end]) |item| out.appendAssumeCapacity(item);
+fn copy(start: usize, end: usize, in: []u32, lane: *std.ArrayList(u32)) void {
+    for (in[start..end]) |item| lane.appendAssumeCapacity(item);
 }
 
 test "pool and wait group autobahn" {
