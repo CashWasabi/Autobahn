@@ -23,34 +23,27 @@ It's so small you can just copy and paste it into your project.
 const std = @import("std");
 const Autobahn = @import("autobahn").Autobahn;
 
-const Driver = struct {
-    id: u32,
-    lane: usize = 0,
-};
-
-pub fn lane(lane: usize, in: []u32, out: []Driver) void {
-    for (in) |id| out.appendAssumeCapacity(.{ .lane = thread_id, .id = id });
-}
-
 pub fn main() !void {
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
 
-    const cpu_count = std.Thread.getCpuCount() catch 1;
-    const thread_count = if (cpu_count > 1) cpu_count else 1;
+    const lane_count = 4;
+    const size = 400_000;
+    const lane_size = @divFloor(size, lane_count);
 
-    const size: usize = 1_000_000;
+    var pool: std.Thread.Pool = undefined;
+    try pool.init(std.Thread.Pool.Options{ .allocator = arena.allocator(), .n_jobs = lane_count });
+    var wg = std.Thread.WaitGroup{};
 
     var in: std.ArrayList(u32) = try .initCapacity(arena.allocator(), size);
-    var out: std.ArrayList(Driver) = try .initCapacity(arena.allocator(), size);
-    var expected_out: std.ArrayList(Driver) = try .initCapacity(arena.allocator(), size);
-    for (0..size) |i| {
-        const value: u32 = @intCast(i);
-        in.appendAssumeCapacity(value);
-        expected_out.appendAssumeCapacity(.{ .id = value });
-    }
+    for (0..in.capacity) |i| in.appendAssumeCapacity(@intCast(i));
+    var out: std.ArrayList(u32) = try .initCapacity(arena.allocator(), size);
 
-    var map: Autobahn(u32, Driver) = try .initCapacity(arena, .{ .lanes = thread_count, .lane_capacity = size });
-    map.forEach(lane, in.items, &out, .{});
+    var lanes: []std.ArrayList(u32) = undefined;
+    lanes = try arena.allocator().alloc(std.ArrayList(u32), lane_count);
+    for (0..lane_count) |i| lanes[i] = try .initCapacity(arena.allocator(), lane_size);
+
+    const autobahn: Autobahn(u32) = .{ .pool = &pool, .wg = &wg };
+    autobahn.forEach(&lanes, &out, copy, .{in.items});
 }
 ```
