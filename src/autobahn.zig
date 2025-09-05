@@ -36,7 +36,7 @@ pub fn Autobahn(comptime O: type) type {
     };
 }
 
-fn copy(start: usize, end: usize, in: []u32, lane: *std.ArrayList(u32)) void {
+fn copy(start: usize, end: usize, lane: *std.ArrayList(u32), in: []u32) void {
     for (in[start..end]) |item| lane.appendAssumeCapacity(item);
 }
 
