@@ -51,6 +51,6 @@ pub fn main() !void {
     }
 
     var map: Autobahn(u32, Driver) = try .initCapacity(arena, .{ .lanes = thread_count, .lane_capacity = size });
-    map.forEach(lane, in.items, &out);
+    map.forEach(lane, in.items, &out, .{});
 }
 ```

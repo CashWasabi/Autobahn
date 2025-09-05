@@ -1,7 +1,6 @@
 pub fn Autobahn(comptime I: type, comptime O: type) type {
     return struct {
         const Self = @This();
-        const LaneFunc = fn (lane: usize, in: []I, out: *std.ArrayList(O)) void;
         const Options = struct { lanes: usize, lane_capacity: usize };
 
         lanes: []std.ArrayList(O),
@@ -31,10 +30,17 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
             allocator.free(self.lanes);
         }
 
-        pub fn forEach(self: *Self, worker_func: LaneFunc, in: []I, out: *std.ArrayList(O)) void {
+        pub fn forEach(
+            self: *Self,
+            lane_func: anytype,
+            in: []I,
+            out: *std.ArrayList(O),
+            extra_func: anytype,
+        ) void {
+
             // Single-thread fallback
             if (self.lanes.len == 1) {
-                worker_func(1, in, out);
+                @call(.auto, lane_func, .{ 1, in, out } ++ extra_func);
                 return;
             }
 
@@ -45,7 +51,8 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
 
             var start: usize = 0;
             for (self.lanes, 0..) |*lane, i| {
-                wg.spawnManager(worker_func, .{ i, in[start .. start + lane.capacity], lane });
+                @call(.auto, lane_func, .{ i, in[start .. start + lane.capacity], lane } ++ extra_func);
+
                 start += lane.capacity;
             }
 
@@ -65,16 +72,6 @@ fn testLaneFunc(lane: usize, in: []u32, out: *std.ArrayList(u32)) void {
     out.appendSliceAssumeCapacity(in);
 }
 
-const Driver = struct { lane: usize, id: u32 };
-
-fn sortById(_: void, lhs: Driver, rhs: Driver) bool {
-    return lhs.id == rhs.id;
-}
-
-fn testStructLaneFunc(lane: usize, in: []u32, out: *std.ArrayList(Driver)) void {
-    for (in) |id| out.appendAssumeCapacity(.{ .lane = lane, .id = id });
-}
-
 test "autobahn single threaded u32" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
@@ -91,7 +88,7 @@ test "autobahn single threaded u32" {
     }
 
     var map: Autobahn(u32, u32) = try .initCapacity(std.testing.allocator, .{ .lanes = 1, .lane_capacity = size });
-    map.forEach(testLaneFunc, in.items, &out);
+    map.forEach(testLaneFunc, in.items, &out, .{});
     map.deinit(std.testing.allocator);
 
     std.mem.sort(u32, out.items, {}, comptime std.sort.asc(u32));
@@ -119,13 +116,26 @@ test "autobahn multi threaded u32" {
     }
 
     var map: Autobahn(u32, u32) = try .initCapacity(std.testing.allocator, .{ .lanes = thread_count, .lane_capacity = size });
-    map.forEach(testLaneFunc, in.items, &out);
+    map.forEach(testLaneFunc, in.items, &out, .{});
     map.deinit(std.testing.allocator);
 
     std.mem.sort(u32, out.items, {}, comptime std.sort.asc(u32));
 
     try std.testing.expectEqual(expected_out.items.len, out.items.len);
     try std.testing.expectEqualSlices(u32, expected_out.items, out.items);
+}
+
+const Driver = struct {
+    lane: usize = 0,
+    id: u32,
+
+    fn sortById(_: void, lhs: Driver, rhs: Driver) bool {
+        return lhs.id == rhs.id;
+    }
+};
+
+fn testStructLaneFunc(lane: usize, in: []u32, out: *std.ArrayList(Driver)) void {
+    for (in) |id| out.appendAssumeCapacity(.{ .lane = lane, .id = id });
 }
 
 test "autobahn multi threaded Driver" {
@@ -143,14 +153,14 @@ test "autobahn multi threaded Driver" {
     for (0..size) |i| {
         const value: u32 = @intCast(i);
         in.appendAssumeCapacity(value);
-        expected_out.appendAssumeCapacity(.{ .lane = 0, .id = value });
+        expected_out.appendAssumeCapacity(.{ .id = value });
     }
 
     var map: Autobahn(u32, Driver) = try .initCapacity(std.testing.allocator, .{ .lanes = thread_count, .lane_capacity = size });
-    map.forEach(testStructLaneFunc, in.items, &out);
+    map.forEach(testStructLaneFunc, in.items, &out, .{});
     map.deinit(std.testing.allocator);
 
-    std.mem.sort(Driver, out.items, {}, sortById);
+    std.mem.sort(Driver, out.items, {}, Driver.sortById);
 
     try std.testing.expectEqual(expected_out.items.len, out.items.len);
     for (0..expected_out.items.len) |i| {
@@ -177,10 +187,72 @@ test "autobahn multi threaded smol" {
     }
 
     var map: Autobahn(u32, Driver) = try .initCapacity(std.testing.allocator, .{ .lanes = thread_count, .lane_capacity = size });
-    map.forEach(testStructLaneFunc, in.items, &out);
+    map.forEach(testStructLaneFunc, in.items, &out, .{});
     map.deinit(std.testing.allocator);
 
-    std.mem.sort(Driver, out.items, {}, sortById);
+    std.mem.sort(Driver, out.items, {}, Driver.sortById);
+
+    try std.testing.expectEqual(expected_out.items.len, out.items.len);
+    for (0..expected_out.items.len) |i| {
+        try std.testing.expectEqual(expected_out.items[i].id, out.items[i].id);
+    }
+}
+
+const ExtraDriver = struct {
+    lane: usize = 0,
+    id: u32,
+    driver_type: DriverType,
+    speed: u32,
+
+    pub fn sortById(_: void, lhs: ExtraDriver, rhs: ExtraDriver) bool {
+        return lhs.id == rhs.id;
+    }
+};
+const DriverType = enum { aggresive, sleeper, old };
+fn testExtraArgsLaneFunc(lane: usize, in: []ExtraDriver, out: *std.ArrayList(ExtraDriver), driver_type: DriverType, speed: u32) void {
+    for (in) |driver| {
+        out.appendAssumeCapacity(.{
+            .lane = lane,
+            .id = driver.id,
+            .driver_type = driver_type,
+            .speed = speed,
+        });
+    }
+}
+
+test "autobahn multi threaded extra_args" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+
+    const cpu_count = std.Thread.getCpuCount() catch 1;
+    const thread_count = if (cpu_count > 1) cpu_count else 1;
+
+    const size: usize = 1_000_000;
+
+    var in: std.ArrayList(ExtraDriver) = try .initCapacity(arena.allocator(), size);
+    var out: std.ArrayList(ExtraDriver) = try .initCapacity(arena.allocator(), size);
+    var expected_out: std.ArrayList(ExtraDriver) = try .initCapacity(arena.allocator(), size);
+    const driver_type: DriverType = .sleeper;
+    const speed: u32 = 130;
+    for (0..size) |i| {
+        const value: u32 = @intCast(i);
+        in.appendAssumeCapacity(.{
+            .id = value,
+            .driver_type = driver_type,
+            .speed = speed,
+        });
+        expected_out.appendAssumeCapacity(.{
+            .id = value,
+            .driver_type = driver_type,
+            .speed = speed,
+        });
+    }
+
+    var map: Autobahn(ExtraDriver, ExtraDriver) = try .initCapacity(std.testing.allocator, .{ .lanes = thread_count, .lane_capacity = size });
+    map.forEach(testExtraArgsLaneFunc, in.items, &out, .{ driver_type, speed });
+    map.deinit(std.testing.allocator);
+
+    std.mem.sort(ExtraDriver, out.items, {}, ExtraDriver.sortById);
 
     try std.testing.expectEqual(expected_out.items.len, out.items.len);
     for (0..expected_out.items.len) |i| {
