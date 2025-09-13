@@ -32,6 +32,7 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
             for (lanes.*) |lane| total_lane_capacity += lane.capacity;
             std.debug.assert(total_lane_capacity > 0);
 
+            // TODO: add single threaded check
             if (lanes.len == 1) {
                 @call(.auto, lane_func, .{ in[0..], out } ++ args);
                 return;
@@ -67,6 +68,7 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
             std.debug.assert(opts.lane_count > 0);
             std.debug.assert(opts.lane_size > 0);
 
+            // TODO: add single threaded check
             if (opts.lane_count == 1) {
                 @call(.auto, lane_func, .{ in[0..], out } ++ args);
                 return;
@@ -95,6 +97,58 @@ pub fn Autobahn(comptime I: type, comptime O: type) type {
                 self.wg.wait();
 
                 for (lanes) |lane| out.appendSliceAssumeCapacity(lane.items);
+            }
+        }
+    };
+}
+
+pub fn AutobahnManaged(comptime I: type, comptime O: type) type {
+    return struct {
+        const Self = @This();
+
+        pool: *std.Thread.Pool,
+        wg: *std.Thread.WaitGroup,
+        lanes: []std.ArrayList(O),
+
+        pub const LaneOptions = struct { lane_count: usize, lane_size: usize };
+
+        pub fn init(allocator: std.mem.Allocator, pool: *std.Thread.Pool, wg: *std.Thread.WaitGroup, opts: LaneOptions) !Self {
+            std.debug.assert(opts.lane_count > 0);
+            std.debug.assert(opts.lane_size > 0);
+
+            const lanes: []std.ArrayList(O) = try allocator.alloc(std.ArrayList(O), opts.lane_count);
+            for (0..opts.lane_count) |i| lanes[i] = try .initCapacity(allocator, opts.lane_size);
+
+            return .{ .pool = pool, .wg = wg, .lanes = lanes };
+        }
+
+        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+            for (self.lanes) |*lane| lane.deinit();
+            allocator.free(self.lanes);
+        }
+
+        pub fn map(self: Self, in: []I, out: *std.ArrayList(O), comptime lane_func: anytype, args: anytype) void {
+            if (self.lanes.len == 1) {
+                @call(.auto, lane_func, .{ in[0..], out } ++ args);
+                return;
+            }
+
+            var start: usize = 0;
+            var end: usize = 0;
+            while (end < in.len) {
+                self.wg.reset();
+
+                for (self.lanes) |*lane| {
+                    lane.clearRetainingCapacity();
+
+                    end = @min(start + lane.capacity, in.len);
+                    self.pool.spawnWg(self.wg, lane_func, .{ in[start..end], lane } ++ args);
+                    start = end;
+                }
+
+                self.wg.wait();
+
+                for (self.lanes) |lane| out.appendSliceAssumeCapacity(lane.items);
             }
         }
     };
