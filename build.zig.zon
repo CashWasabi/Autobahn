@@ -3,6 +3,15 @@
     .version = "0.4.0",
     .fingerprint = 0x93f61ce4d3f89142, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.1",
-    .dependencies = .{},
+    .dependencies = .{
+        .ztracy = .{
+            .url = "git+https://github.com/zig-gamedev/ztracy.git#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
+            .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
+        },
+        .zemscripten = .{
+            .url = "git+https://github.com/zig-gamedev/zemscripten.git#00da03b188220374a57cb34cda6230b8d53737ea",
+            .hash = "zemscripten-0.2.0-dev-sRlDqFJSAAB8hgnRt5DDMKP3zLlDtMnUDwYRJVCa5lGY",
+        },
+    },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
 }
