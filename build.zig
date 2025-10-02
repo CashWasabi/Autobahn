@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) !void {
     // ==> EXAMPLE BUILDS <==
     // ======================
     for (&[_]ExampleData{
+        .{ .name = "in_place", .source = "examples/in_place.zig" },
         .{ .name = "map", .source = "examples/map.zig" },
         .{ .name = "filter", .source = "examples/filter.zig" },
         .{ .name = "swap", .source = "examples/swap.zig" },
@@ -99,7 +100,7 @@ pub fn build(b: *std.Build) !void {
     //
     //     const emcc_settings = zemscripten.emccDefaultSettings(allocator, .{
     //         .optimize = optimize,
-    //         .emsdk_allocator = b.allocator,
+    //         .emsdk_allocator = std.heap.c_allocator,
     //     });
     //
     //     const emcc_step = blk: {

@@ -5,13 +5,13 @@ const SpinningThreadPool = autobahn.SpinningThreadPool;
 
 const Times2Args = struct {
     input: []const i32,
-    output: []i32,
+    swap_buffer: []i32,
 };
 
 fn times2(ctx: *anyopaque) void {
     const args: *Times2Args = @ptrCast(@alignCast(ctx));
     for (args.input, 0..) |x, i| {
-        args.output[i] = x * 2;
+        args.swap_buffer[i] = x * 2;
     }
 }
 
@@ -30,12 +30,15 @@ pub fn main() !void {
     defer pool.stop();
 
     const count: usize = 1_000_000;
+
     var input = try allocator.alloc(i32, count);
     for (0..count) |i| input[i] = @intCast(i);
+
     var expected = try allocator.alloc(i32, count);
     for (0..count) |i| expected[i] = input[i] * 2;
-    var output = try allocator.alloc(i32, count);
-    for (0..count) |i| output[i] = 0;
+
+    var swap_buffer = try allocator.alloc(i32, count);
+    for (0..swap_buffer.len) |i| swap_buffer[i] = 0;
 
     const chunk = 256;
     var args_list: std.ArrayList(Times2Args) = .empty;
@@ -49,7 +52,7 @@ pub fn main() !void {
 
         try args_list.append(
             allocator,
-            .{ .input = input[start..end], .output = output[start..end] },
+            .{ .input = input[start..end], .swap_buffer = swap_buffer[start..end] },
         );
         _ = pool.spawn(times2, &args_list.items[args_list.items.len - 1]);
 
@@ -59,8 +62,8 @@ pub fn main() !void {
     pool.waitAll();
 
     const temp = input;
-    input = output;
-    output = temp;
+    input = swap_buffer;
+    swap_buffer = temp;
 
     std.log.debug("Ran our swap function on {}", .{count});
     try std.testing.expectEqualSlices(i32, expected, input);

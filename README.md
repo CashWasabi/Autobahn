@@ -23,3 +23,8 @@ It's so small you can just copy and paste it into your project.
 
 - low latency thread pool
 - lock free threading
+
+## WIP
+
+- emscripten support []
+- helper functions []
